@@ -1,133 +1,139 @@
-# Variables globales ISP
-:global isp1 "ISP1";
-:global isp2 "ISP2";
-:global isp3 "ISP3";
-
-# Variables globales prefijos de cada caso combinacion por ISP Activo
-:global prefixAll "@CASO1 ALL";
-:global prefixIsp1Isp2 "@CASO2 TELMEX & MEGA1";
-:global prefixIsp1Isp3 "@CASO3 TELMEX & MEGA2";
-:global prefixIsp2Isp3 "@CASO4 MEGA1 & MEGA2";
-:global prefixIsp1 "@CASO5 TELMEX";
-:global prefixIsp2 "@CASO6 MEGA1";
-:global prefixIsp3 "@CASO7 MEGA2";
-
-# Variables globales Ip de cada ISP
-:global ipIsp1 "192.168.1.254";
-:global ipIsp2 "192.168.0.1";
-:global ipIsp3 "192.168.2.1";
-
-# Variable global que identifica cual ISP esta arriba (online)
 :global ispUp;
 
-# Funcion que desactiva todas la reglas mangles segun el prefijo de todos los casos (combinaciones)
+:global prefixAllBalancer "@BALANCEO";
+:global prefixPCC "PCC";
+:global TEMX1 "TELMEX1";
+:global TEMX2 "TELMEX2";
+:global MEGA1 "MEGA1";
+:global MEGA2 "MEGA2";
+
+# TODO: Fill ip by gateway ip
+:global ipISPS {
+    "TELMEX1"="";
+    "TELMEX2"="";
+    "MEGA1"="";
+    "MEGA2"="";
+};
+
+:global mbISPS {
+    "TELMEX1"=200;
+    "TELMEX2"=200;
+    "MEGA1"=100;
+    "MEGA2"=100;
+};
+
+:global commentsISPS {
+    "TELMEX1"="$prefixAllBalancer | $TEMX1 $prefixPCC";
+    "TELMEX2"="$prefixAllBalancer | $TEMX2 $prefixPCC";
+    "MEGA1"="$prefixAllBalancer | $MEGA1 $prefixPCC";
+    "MEGA2"="$prefixAllBalancer | $MEGA2 $prefixPCC";
+};
+
+:global arrayISPS [:toarray "$TEMX1,$TEMX2,$MEGA1,$MEGA2"];
+
+:global getComunDivisor do={
+    :local a $1;
+    :local b $2;
+    :while ($b != 0) do={
+        :local temp $b;
+        :set b ($a % $b);
+        :set a $temp;
+    }
+    :return $a;
+}
+:global getMaxComunDivisor do={
+    :global getComunDivisor;
+    :local arr $1;
+    :local size [:len $arr];
+    :local result [:pick $arr 0];
+    :if ($size = 1) do={
+        :return $result;
+    }
+    :for i from=1 to=(size - 1) do={
+        :set result [$getComunDivisor $result [:pick $arr $i]];
+    }
+    :return $result;
+}
 :global downAllMangles do={
-    :global prefixAll;
-    :global prefixIsp1Isp2;
-    :global prefixIsp1Isp3;
-    :global prefixIsp2Isp3;
-    :global prefixIsp1;
-    :global prefixIsp2;
-    :global prefixIsp3;
-    /ip firewall mangle disable [find comment~$prefixAll];
-    /ip firewall mangle disable [find comment~$prefixIsp1Isp2];
-    /ip firewall mangle disable [find comment~$prefixIsp1Isp3];
-    /ip firewall mangle disable [find comment~$prefixIsp2Isp3];
-    /ip firewall mangle disable [find comment~$prefixIsp1];
-    /ip firewall mangle disable [find comment~$prefixIsp2];
-    /ip firewall mangle disable [find comment~$prefixIsp3];
-    :log info "Execute Function downAllMangles";
+    :global prefixAllBalancer;
+    /ip firewall mangle disable [find comment~$prefixAllBalancer];
+};
+:global updateMangle do={
+    :local prefixMangle $1;
+    :local perConnectionClassifier $2;
+    :local valuePccToSet "both-addresses-and-ports:$perConnectionClassifier";
+    :log info "updateMangle => prefix=$prefixMangle, valuePccToSet=$valuePccToSet";
+    /ip firewall mangle set [find comment=$prefixMangle] per-connection-classifier=$valuePccToSet;
+    /ip firewall mangle enable [find comment=$prefixMangle];
 };
 
-# Funcion que activa las reglas mangles segun el prefijo que se le pase por parametro $paramPrefixMangle
-:global upMangles do={
-    :local paramPrefixMangle $1;
-    /ip firewall mangle enable [find comment~$paramPrefixMangle];
-    :log info "Execute Function upMangles paramPrefixMangle = $paramPrefixMangle";
-};
-
-# Funcion que maneja la logica cuando un ISP regresa a estar activa (Online)
 :global handleActionsWhenUpMangle do={
-    :global prefixAll;
-    :global prefixIsp1Isp2;
-    :global prefixIsp1Isp3;
-    :global prefixIsp2Isp3;
-    :global prefixIsp1;
-    :global prefixIsp2;
-    :global prefixIsp3;
+    # :log info "Init handleActionsWhenUpMangle";
 
-    :global downAllMangles;
-    :global upMangles;
     :global ispUp;
-    :global isp1;
-    :global isp2;
-    :global isp3;
-    :global ipIsp1;
-    :global ipIsp2;
-    :global ipIsp3;
-
-    :local isOnlineISP1 true;
-    :local isOnlineISP2 true;
-    :local isOnlineISP3 true;
-
-    :log info "Handle Actions When Up $ispUp";
-
-    :if ($ispUp != $isp1 && [/ping $ipIsp1 count=5] = 0) do={
-        :set $isOnlineISP1 false;
-    }
-    :if ($ispUp != $isp2 && [/ping $ipIsp2 count=5] = 0) do={
-        :set $isOnlineISP2 false;
-    }
-    :if ($ispUp != $isp3 && [/ping $ipIsp3 count=5] = 0) do={
-        :set $isOnlineISP3 false;
-    }
-
-    :log info "isOnlineISP1 = $isOnlineISP1, isOnlineISP2 = $isOnlineISP2, isOnlineISP3 = $isOnlineISP3";
     
-    $downAllMangles;
+    :global downAllMangles;
+    :global updateMangle;
+    :global getMaxComunDivisor;
+    :global arrayISPS;
+    
+    :global ipISPS;
+    :global mbISPS;
+    :global commentsISPS;
 
-    :if ($ispUp = $isp1) do={
-        :if ($isOnlineISP2 && $isOnlineISP3) do={
-            $upMangles ("" . $prefixAll . "");
+    :local logStatus "";
+    :local ispPrefixActives [:toarray ""];
+    :local mbsIspActives [:toarray ""];
+
+    :local countIspActive 0;
+
+    :for i from=0 to=([:len $arrayISPS] - 1) do={
+        :local isp [:pick $arrayISPS $i];
+        :local online true;
+        :local ip ($ipISPS->($isp));
+        :local mb ($mbISPS->($isp));
+        :if ($ispUp != $isp && [/ping $ip count=3] = 0) do={
+            :set $online false;
         }
-        :if ($isOnlineISP2 && !$isOnlineISP3) do={
-            $upMangles ("" . $prefixIsp1Isp2 . "");
+        :if ($online) do={
+            :set ($ispPrefixActives->$countIspActive) $isp;
+            :set ($mbsIspActives->$countIspActive) $mb;
+            :set countIspActive ($countIspActive + 1);
         }
-        :if (!$isOnlineISP2 && $isOnlineISP3) do={
-            $upMangles ("" . $prefixIsp1Isp3 . "");
+        :set $logStatus ($logStatus . "    $isp=" . $online);
+    }
+
+    :log info $logStatus;
+    $downAllMangles;
+    :if ([:len $ispPrefixActives] > 0) do={
+        :local maxComunDivisor [$getMaxComunDivisor $mbsIspActives]
+        :log info "maxComunDivisor = $maxComunDivisor";
+        :local ispPackages [:toarray ""];
+        :local sumPackagesAvailables 0;
+        :for i from=0 to=([:len $ispPrefixActives] - 1) do={
+            :local isp [:pick $ispPrefixActives $i];
+            :local mb ($mbISPS->($isp));
+
+            :local package ($mb / $maxComunDivisor);
+            :set $sumPackagesAvailables ($sumPackagesAvailables + $package);
+            :set ($ispPackages->$i) $package;
         }
-        :if (!$isOnlineISP2 && !$isOnlineISP3) do={
-            $upMangles ("" . $prefixIsp1 . "");
+        :log info "ispPackages = $ispPackages";
+        :log info "sumPackagesAvailables = $sumPackagesAvailables";
+        :local counter 0;
+        :for i from=0 to=([:len $ispPrefixActives] - 1) do={
+            :local isp [:pick $ispPrefixActives $i];
+            :local comment ($commentsISPS->($isp));
+            :local package [:pick $ispPackages $i];
+            :for j from=1 to=($package) do={
+                :local prefix "$comment$j";
+                :local pcc "$sumPackagesAvailables/$counter";
+                $updateMangle $prefix $pcc;
+                :set $counter ($counter + 1);
+            }
         }
     }
-    :if ($ispUp = $isp2) do={
-        :if ($isOnlineISP1 && $isOnlineISP3) do={
-            $upMangles ("" . $prefixAll . "");
-        }
-        :if ($isOnlineISP1 && !$isOnlineISP3) do={
-            $upMangles ("" . $prefixIsp1Isp2 . "");
-        }
-        :if (!$isOnlineISP1 && $isOnlineISP3) do={
-            $upMangles ("" . $prefixIsp2Isp3 . "");
-        }
-        :if (!$isOnlineISP1 && !$isOnlineISP3) do={
-            $upMangles ("" . $prefixIsp2 . "");
-        }
-    }
-    :if ($ispUp = $isp3) do={
-        :if ($isOnlineISP1 && $isOnlineISP2) do={
-            $upMangles ("" . $prefixAll . "");
-        }
-        :if ($isOnlineISP1 && !$isOnlineISP2) do={
-            $upMangles ("" . $prefixIsp1Isp3 . "");
-        }
-        :if (!$isOnlineISP1 && $isOnlineISP2) do={
-            $upMangles ("" . $prefixIsp2Isp3 . "");
-        }
-        :if (!$isOnlineISP1 && !$isOnlineISP2) do={
-            $upMangles ("" . $prefixIsp3 . "");
-        }
-    }
+    
     :log info "End function handleActionsWhenUpMangle";
 
 }
